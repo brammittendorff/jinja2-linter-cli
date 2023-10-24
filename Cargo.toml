@@ -1,0 +1,12 @@
+[package]
+name = "jinja2-linter-cli"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.5.8"
+walkdir = "2.3.2"  # for walking through directories
+tokio = { version = "1", features = ["full"] }

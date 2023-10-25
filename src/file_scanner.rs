@@ -25,16 +25,12 @@ fn is_file_matching(
     entry: &DirEntry, 
     allowed_extensions: &HashSet<OsString>,
 ) -> bool {
+    // Check if the entry is a file
     if entry.file_type().is_file() {
+        // Check if the file has an allowed extension
         if let Some(ext) = entry.path().extension() {
-            if allowed_extensions.contains(ext) {
-                return true;
-            }
+            return allowed_extensions.contains(ext);
         }
-    } else if entry.file_type().is_dir() {
-        // If the entry is a directory, we include it for further exploration
-        return true;
     }
-
     false
 }

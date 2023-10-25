@@ -6,6 +6,7 @@ use std::path::Path; // Used for '&Path'
 use serde::Deserialize; // Used for the 'Deserialize' trait
 use tokio; // Used for asynchronous operations
 use toml; // Used for parsing TOML files
+use clap::{App, Arg};
 
 mod file_scanner; // Importing the file_scanner module
 
@@ -26,10 +27,38 @@ async fn read_pyproject(file_path: &Path) -> Result<PyProject, io::Error> {
 // Required for the async main function.
 #[tokio::main]
 async fn main() {
-    // Attempt to read the pyproject.toml file first for configuration values.
-    let config_path = Path::new("./pyproject.toml"); // Adjust path as necessary.
 
-    // Handling the configuration reading
+    // Set up the command-line arguments using the `clap` crate.
+    let matches = App::new("Jinja2 Linter CLI")
+        .version("0.1")
+        .author("Bram Mittendorff <botw44@gmail.com>")
+        .about("This is a CLI linter for Jinja2 templates.")
+        .arg(
+            Arg::with_name("config")
+                .short('c') // Change here: use a char, not a string
+                .long("config")
+                .value_name("FILE")
+                .help("Sets a custom config file")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("directory")
+                .short('d') // Change here: use a char, not a string
+                .long("directory")
+                .value_name("DIR")
+                .help("Sets the directory to scan")
+                .takes_value(true),
+        )
+        .get_matches();
+
+    // Get the values of the input arguments. If not provided, defaults are used.
+    let config_path_str = matches.value_of("config").unwrap_or("./pyproject.toml");
+    let directory_path_str = matches.value_of("directory").unwrap_or(".");
+
+    let config_path = Path::new(config_path_str);
+    let current_directory = Path::new(directory_path_str);
+
+    // Existing logic for reading the configuration file...
     let _pyproject_config = match read_pyproject(config_path).await {
         Ok(config) => {
             println!("Configurations: {:?}", config);
@@ -53,9 +82,7 @@ async fn main() {
     .iter()
     .cloned()
     .map(OsString::from)
-    .collect();    
-
-    let current_directory = Path::new("."); // The root directory for scanning.
+    .collect();
 
     // Scan all files, considering the allowed extensions.
     let all_files = match file_scanner::scan_for_files(current_directory, allowed_extensions).await {

@@ -1,21 +1,16 @@
-use std::collections::{HashMap, HashSet}; // Used for 'HashMap' and 'HashSet'
-use std::ffi::{OsStr, OsString}; // Used for 'OsStr' and 'OsString'
+use std::collections::HashSet;
+use std::ffi::OsString;
 use std::io; // Used for 'io::Error'
 use std::path::Path; // Used for '&Path'
 
-use serde::Deserialize; // Used for the 'Deserialize' trait
 use tokio; // Used for asynchronous operations
 use toml; // Used for parsing TOML files
 use clap::{App, Arg};
 
 mod file_scanner; // Importing the file_scanner module
 
-// Use a HashMap to represent the tool configurations dynamically.
-#[derive(Debug, Deserialize)]
-struct PyProject {
-    #[allow(dead_code)] // This attribute suppresses the warning specifically for this field
-    tool: HashMap<String, toml::Value>,
-}
+mod config; // Include the new config module
+use config::PyProject; // Use the PyProject struct from the config module
 
 // This function attempts to read and parse a pyproject.toml file.
 async fn read_pyproject(file_path: &Path) -> Result<PyProject, io::Error> {
@@ -59,7 +54,7 @@ async fn main() {
     let current_directory = Path::new(directory_path_str);
 
     // Existing logic for reading the configuration file...
-    let _pyproject_config = match read_pyproject(config_path).await {
+    let pyproject_config = match read_pyproject(config_path).await {
         Ok(config) => {
             println!("Configurations: {:?}", config);
             config
@@ -70,22 +65,16 @@ async fn main() {
         }
     };
 
-    // Define your allowed extensions.
-    let allowed_extensions: HashSet<OsString> = [
-        OsStr::new("html"),
-        OsStr::new("j2"),
-        OsStr::new("jinja2"),
-        OsStr::new("tmpl"),
-        OsStr::new("jinja"),
-        OsStr::new("j2t"),
-    ]
-    .iter()
-    .cloned()
-    .map(OsString::from)
-    .collect();
+    // Make sure pyproject_config is of type PyProject from config.rs
+    let allowed_extensions = config::get_os_string_allowed_extensions(
+        &pyproject_config.tool.jinja2_linter_cli.allowed_extensions,
+    );
 
-    // Scan all files, considering the allowed extensions.
-    let all_files = match file_scanner::scan_for_files(current_directory, allowed_extensions).await {
+    // Before calling scan_for_files, convert allowed_extensions from Vec to HashSet
+    let allowed_extensions_set: HashSet<OsString> = allowed_extensions.into_iter().collect();
+
+    // Now, you can pass allowed_extensions_set to the function as it expects a HashSet
+    let all_files = match file_scanner::scan_for_files(current_directory, allowed_extensions_set).await {
         Ok(files) => files,
         Err(e) => {
             eprintln!("Error scanning files: {}", e);

@@ -1,1 +1,9 @@
 [tool.jinja2-linter-cli]
+allowed_extensions = [
+    "html",
+    "j2",
+    "jinja2",
+    "tmpl",
+    "jinja",
+    "j2t",
+]

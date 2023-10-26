@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::ffi::OsString;
 use std::io; // Used for 'io::Error'
 use std::path::Path; // Used for '&Path'
+use futures::future;  // Import the futures utility
 
 use tokio; // Used for asynchronous operations
 use toml; // Used for parsing TOML files
@@ -11,6 +12,9 @@ mod file_scanner; // Importing the file_scanner module
 
 mod config; // Include the new config module
 use config::PyProject; // Use the PyProject struct from the config module
+
+mod rules;  // This declares that a `rules` module exists.
+use rules::jinja_operator_has_spaces_rule::JinjaOperatorHasSpacesRule;
 
 // This function attempts to read and parse a pyproject.toml file.
 async fn read_pyproject(file_path: &Path) -> Result<PyProject, io::Error> {
@@ -73,7 +77,6 @@ async fn main() {
     // Before calling scan_for_files, convert allowed_extensions from Vec to HashSet
     let allowed_extensions_set: HashSet<OsString> = allowed_extensions.into_iter().collect();
 
-    // Now, you can pass allowed_extensions_set to the function as it expects a HashSet
     let all_files = match file_scanner::scan_for_files(current_directory, allowed_extensions_set).await {
         Ok(files) => files,
         Err(e) => {
@@ -82,19 +85,28 @@ async fn main() {
         }
     };
 
-    // Process the files obtained from the scan. This is where you would add your linting or processing logic.
-    for file in all_files {
-        println!("Processing file: {:?}", file);
+    let rule1 = JinjaOperatorHasSpacesRule::new();
 
-        // Insert your logic for each file here. 
-        // For example, you could pass each file to an asynchronous linting function.
-        //
-        // Example:
-        // match your_async_linting_function(file).await {
-        //     Ok(_) => println!("Successfully linted {:?}", file),
-        //     Err(err) => eprintln!("Error linting file {:?}: {}", file, err),
-        // }
+    // This vector will hold all of future::join_all tasks
+    let mut tasks = Vec::new();
+
+    for file in all_files {
+        println!("Scheduled for processing: {:?}", file);
+        // Clone the rule for each file to avoid ownership issues, or implement a way that rule can be shared safely across tasks.
+        let rule = rule1.clone();
+        tasks.push(tokio::spawn(async move {
+            match rule.check_file(file).await {
+                Ok(_) => {
+                    // Do nothing for now, or explicitly state your intent for clarity
+                    // This branch explicitly ignores successful operations.
+                },
+                Err(err) => eprintln!("Error checking file: {}", err),
+            }
+        }));
     }
+
+    // Now, we wait for all tasks to complete. This is done in parallel.
+    let _ = future::join_all(tasks).await;
 
     // Any further logic for after processing the files can go here.
 }

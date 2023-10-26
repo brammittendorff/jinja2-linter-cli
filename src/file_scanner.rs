@@ -1,36 +1,37 @@
-// Standard library imports are grouped together
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
+use tokio::fs; // Make sure to use async fs from tokio
+use std::future::Future;
+use std::pin::Pin;
 
-// External crate imports are done separately
-use walkdir::{DirEntry, WalkDir};
+pub fn scan_for_files(
+    dir: &Path, 
+    allowed_extensions: HashSet<OsString>
+) -> Pin<Box<dyn Future<Output = io::Result<Vec<PathBuf>>> + '_>> {
+    Box::pin(async move {
+        let mut files_to_process = Vec::new();
 
-// Since we're operating in an async context, we need this function to be async as well.
-pub async fn scan_for_files(dir: &Path, allowed_extensions: HashSet<OsString>) -> io::Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
+        // Recursive directory traversal with async reading
+        let mut read_dir = fs::read_dir(dir).await?;
 
-    for entry in WalkDir::new(dir).into_iter().filter_map(Result::ok) {
-        // Now we check if the file has an allowed extension
-        if is_file_matching(&entry, &allowed_extensions) {
-            files.push(entry.into_path());
+        while let Some(entry) = read_dir.next_entry().await? {
+            let path = entry.path();
+
+            if path.is_dir() {
+                // Recursive call to handle subdirectories
+                let mut subdir_files = scan_for_files(&path, allowed_extensions.clone()).await?;
+                files_to_process.append(&mut subdir_files);
+            } else {
+                if let Some(ext) = path.extension() {
+                    if allowed_extensions.contains(ext) {
+                        files_to_process.push(path);
+                    }
+                }
+            }
         }
-    }
 
-    Ok(files)
-}
-
-fn is_file_matching(
-    entry: &DirEntry, 
-    allowed_extensions: &HashSet<OsString>,
-) -> bool {
-    // Check if the entry is a file
-    if entry.file_type().is_file() {
-        // Check if the file has an allowed extension
-        if let Some(ext) = entry.path().extension() {
-            return allowed_extensions.contains(ext);
-        }
-    }
-    false
+        Ok(files_to_process)
+    })
 }

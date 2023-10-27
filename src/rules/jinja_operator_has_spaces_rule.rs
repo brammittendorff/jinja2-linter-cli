@@ -1,21 +1,31 @@
 use regex::Regex;
 use std::path::PathBuf;
-use tokio::fs;  // for async file reading
+use tokio::fs;
+use std::sync::Arc;
 
-// You might have a custom error type for your application.
+// Assume you might have a custom error type for your application.
 // For simplicity, we're going to use `Box<dyn std::error::Error>` here.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-#[derive(Clone)] // This line is added to derive the Clone trait
+#[derive(Clone)] // This ensures the struct implements the Clone trait
 pub struct JinjaOperatorHasSpacesRule {
-    // Add fields if necessary, e.g., for configuration
+    // Pre-compiled regex to be used for checks.
+    regex_no_space: Arc<Regex>,
+    regex_with_space: Arc<Regex>,
+    // Add other fields as necessary, e.g., for configuration.
 }
 
 impl JinjaOperatorHasSpacesRule {
     pub fn new() -> Self {
         // Initialize and return an instance of the rule.
+        // Precompile the regexes here, before we start scanning files.
+        let regex_no_space = Arc::new(Regex::new(r"\{\{[^{}]*\|[^{}]*\}\}").unwrap());
+        let regex_with_space = Arc::new(Regex::new(r"\{\{[^{}]*\s\|\s[^{}]*\}\}").unwrap());
+
         JinjaOperatorHasSpacesRule {
-            // Initialization fields if you have any
+            regex_no_space,
+            regex_with_space,
+            // Initialize other fields if you have any.
         }
     }
 
@@ -25,12 +35,11 @@ impl JinjaOperatorHasSpacesRule {
 
         // Process the content (for example, by checking each line)
         for (line_no, line) in content.lines().enumerate() {
-            // Simple example of checking for a missing space around an operator "|"
-            // Note: This is a simplified regex and might not cover complex Jinja syntax cases
-            let re = Regex::new(r"\{\{[^{}]*\|[^{}]*\}\}").unwrap(); // Adjust based on actual needs
-            if re.is_match(&line) && !Regex::new(r"\{\{[^{}]*\s\|\s[^{}]*\}\}").unwrap().is_match(&line) {
-                // For the sake of this example, we're just printing the issues. 
-                // You might want to collect these and return them for a summary report.
+            // Use the pre-compiled regexes from the struct's fields.
+            // This avoids re-compiling the regexes every time, which is expensive.
+            if self.regex_no_space.is_match(&line) && !self.regex_with_space.is_match(&line) {
+                // Here, we're just printing the issues, but you might want to collect these
+                // and return them for a summary report, or handle them as appropriate for your application.
                 println!(
                     "File {:?}, line {}: Operator '|' should be enclosed by spaces.",
                     file_path, line_no + 1

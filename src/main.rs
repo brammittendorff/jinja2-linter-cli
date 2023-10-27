@@ -1,19 +1,21 @@
 use std::collections::HashSet;
 use std::ffi::OsString;
-use std::io; // Used for 'io::Error'
-use std::path::Path; // Used for '&Path'
-use futures::future;  // Import the futures utility
+use std::io;
+use std::path::Path;
+use futures::future;
 
-use tokio; // Used for asynchronous operations
-use toml; // Used for parsing TOML files
+use tokio::sync::Semaphore;
+use std::sync::Arc;
+use toml;
 use clap::{App, Arg};
 
-mod file_scanner; // Importing the file_scanner module
+mod file_scanner;
+use file_scanner::scan_for_files;
 
-mod config; // Include the new config module
-use config::PyProject; // Use the PyProject struct from the config module
+mod config;
+use config::PyProject;
 
-mod rules;  // This declares that a `rules` module exists.
+mod rules;
 use rules::jinja_operator_has_spaces_rule::JinjaOperatorHasSpacesRule;
 
 // This function attempts to read and parse a pyproject.toml file.
@@ -56,6 +58,7 @@ async fn main() {
 
     let config_path = Path::new(config_path_str);
     let current_directory = Path::new(directory_path_str);
+    let current_directory_buf = current_directory.to_path_buf();
 
     // Existing logic for reading the configuration file...
     let pyproject_config = match read_pyproject(config_path).await {
@@ -76,8 +79,15 @@ async fn main() {
 
     // Before calling scan_for_files, convert allowed_extensions from Vec to HashSet
     let allowed_extensions_set: HashSet<OsString> = allowed_extensions.into_iter().collect();
+    let allowed_extensions_arc = Arc::new(allowed_extensions_set);
 
-    let all_files = match file_scanner::scan_for_files(current_directory, allowed_extensions_set).await {
+    // Control the level of concurrency with a semaphore.
+    let max_concurrent_tasks = 50; // This value can be adjusted according to the system's capabilities.
+    let semaphore = Arc::new(Semaphore::new(max_concurrent_tasks));
+
+    // Here we use the updated scan_for_files function and pass the needed arguments. 
+    // Notice that we're passing a reference to the allowed_extensions_set to avoid cloning.
+    let all_files = match scan_for_files(current_directory_buf, allowed_extensions_arc, semaphore.clone()).await {
         Ok(files) => files,
         Err(e) => {
             eprintln!("Error scanning files: {}", e);
@@ -87,25 +97,18 @@ async fn main() {
 
     let rule1 = JinjaOperatorHasSpacesRule::new();
 
-    // This vector will hold all of future::join_all tasks
+    // Preparing for concurrent task execution with proper error handling.
     let mut tasks = Vec::new();
-
     for file in all_files {
-        println!("Scheduled for processing: {:?}", file);
-        // Clone the rule for each file to avoid ownership issues, or implement a way that rule can be shared safely across tasks.
-        let rule = rule1.clone();
+        let rule = rule1.clone(); // Cloning the rule for use in multiple tasks.
         tasks.push(tokio::spawn(async move {
-            match rule.check_file(file).await {
-                Ok(_) => {
-                    // Do nothing for now, or explicitly state your intent for clarity
-                    // This branch explicitly ignores successful operations.
-                },
-                Err(err) => eprintln!("Error checking file: {}", err),
+            if let Err(err) = rule.check_file(file).await { // Passing reference to file path.
+                eprintln!("Error checking file: {}", err);
             }
         }));
     }
 
-    // Now, we wait for all tasks to complete. This is done in parallel.
+    // Wait for all tasks to complete.
     let _ = future::join_all(tasks).await;
 
     // Any further logic for after processing the files can go here.
